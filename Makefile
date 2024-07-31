@@ -9,7 +9,7 @@ include disable_implicite_rules.mk
 # variables
 # =================================================
 SHELL = /bin/bash
-PREFIX ?= /opt/m68k-elf
+PREFIX ?= /opt/m68k-elf-toolchain
 
 UNAME_S := $(shell uname -s)
 BUILD := build-$(UNAME_S)
@@ -17,10 +17,10 @@ BUILD := build-$(UNAME_S)
 GCC_VERSION ?= $(shell cat 2>/dev/null projects/gcc/gcc/BASE-VER)
 
 BINUTILS_BRANCH := binutils-2_33-branch
-GCC_BRANCH := releases/gcc-10
-GCC_LANGUAGES := c,c++,lto
+GCC_BRANCH := releases/gcc-11
+GCC_LANGUAGES := c
 
-BUILD_THREADS := -j3
+BUILD_THREADS := -j8
 
 GIT_BINUTILS         := git://sourceware.org/git/binutils-gdb.git
 GIT_GCC              := https://github.com/gcc-mirror/gcc
@@ -31,10 +31,12 @@ GIT_VLINK            := https://github.com/ddraig68k/vlink
 
 CFLAGS ?= -Os
 CXXFLAGS ?= $(CFLAGS)
-CFLAGS_FOR_TARGET ?= -O2 -fomit-frame-pointer
+CFLAGS_FOR_TARGET ?= -O2 -mpcrel -fomit-frame-pointer -ffixed-a5 -fshort-enums -fno-cse-follow-jumps
 CXXFLAGS_FOR_TARGET ?= $(CFLAGS_FOR_TARGET) -fno-exceptions -fno-rtti
+ASFLAGS_FOR_TARGET = --pcrel
 
-E:=CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" CFLAGS_FOR_BUILD="$(CFLAGS)" CXXFLAGS_FOR_BUILD="$(CXXFLAGS)"  CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" CXXFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)"
+E:=CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" CFLAGS_FOR_BUILD="$(CFLAGS)" CXXFLAGS_FOR_BUILD="$(CXXFLAGS)"  CFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" CXXFLAGS_FOR_TARGET="$(CFLAGS_FOR_TARGET)" ASFLAGS_FOR_TARGET="$(ASFLAGS_FOR_TARGET)"
+
 
 # =================================================
 # determine exe extension for cygwin
@@ -170,8 +172,8 @@ ifeq ($(BUILD_TARGET),msys)
 all: install-dll
 endif
 
-.PHONY: all gcc binutils vasm vbcc vlink libgcc newlib
-all: gcc binutils vasm vbcc vlink libgcc newlib
+.PHONY: all gcc binutils libgcc newlib
+all: gcc binutils libgcc newlib
 
 # =================================================
 # clean
@@ -232,8 +234,8 @@ ifeq ($(BUILD_TARGET),msys)
 update: update-gmp update-mpc update-mpfr
 endif
 
-.PHONY: update update-gcc update-binutils update-vasm update-vbcc update-vlink update-newlib
-update: update-gcc update-binutils update-vasm update-vbcc update-vlink update-newlib
+.PHONY: update update-gcc update-binutils update-newlib
+update: update-gcc update-binutils update-newlib
 
 update-gcc: projects/gcc/configure
 	cd projects/gcc && export DEPTH=16; while true; do echo "trying depth=$$DEPTH"; git pull --depth $$DEPTH && break; export DEPTH=$$(($$DEPTH+$$DEPTH));done
@@ -291,7 +293,7 @@ status-all:
 # =================================================
 # binutils
 # =================================================
-CONFIG_BINUTILS :=--prefix=$(PREFIX_TARGET) --target=m68k-elf --disable-werror --enable-lto
+CONFIG_BINUTILS :=--prefix=$(PREFIX_TARGET) --target=m68k-elf --disable-werror --disable-lto
 BINUTILS_CMD := m68k-elf-addr2line m68k-elf-ar m68k-elf-as m68k-elf-c++filt \
 	m68k-elf-ld m68k-elf-nm m68k-elf-objcopy m68k-elf-objdump m68k-elf-ranlib \
 	m68k-elf-readelf m68k-elf-size m68k-elf-strings m68k-elf-strip
@@ -323,14 +325,17 @@ $(BUILD)/binutils/Makefile: projects/binutils/configure
 projects/binutils/configure:
 	@mkdir -p projects
 	@cd projects &&	git clone -b $(BINUTILS_BRANCH) --depth 16 $(GIT_BINUTILS) binutils
+	@cd projects/binutils && patch -p1 < ../../binutils-a5-data-segment.patch || echo "Failed to apply binutils-a5-data-segment.patch; check compatibility."
+	@cd projects/binutils && patch -p1 < ../../binutils-sim-32bit-offsets.patch || echo "Failed to apply binutils-sim-32bit-offsets.patch; check compatibility."
+
 
 # =================================================
 # gcc
 # =================================================
 CONFIG_GCC=--prefix=$(PREFIX_TARGET) --target=m68k-elf --enable-languages=$(GCC_LANGUAGES) \
-	--enable-version-specific-runtime-libs --disable-libssp --disable-nls --disable-threads --disable-libmudflap --disable-libgomp  \
-	--with-newlib --with-headers=$(PWD)/projects/newlib-cygwin/newlib/libc/include/ --disable-shared \
-	--disable-libquadmath --disable-libatomic --with-cpu=68000 --src=../../projects/gcc 
+	--disable-libssp --disable-nls --disable-threads --disable-libmudflap --disable-libgomp  --disable-multilib \
+	--with-newlib --with-headers=$(PWD)/projects/newlib-cygwin/newlib/libc/include/ --disable-shared --disable-lto \
+	--disable-libquadmath --disable-libatomic --with-cpu=68000 --with-gnu-as --with-gnu-ld --src=../../projects/gcc 
 
 GCC_CMD = m68k-elf-c++ m68k-elf-g++ m68k-elf-gcc-$(GCC_VERSION) m68k-elf-gcc-nm \
 	m68k-elf-gcov m68k-elf-gcov-tool m68k-elf-cpp m68k-elf-gcc m68k-elf-gcc-ar \
@@ -362,6 +367,7 @@ endif
 projects/gcc/configure:
 	@mkdir -p projects
 	@cd projects &&	git clone -b $(GCC_BRANCH) --depth 16 $(GIT_GCC)
+	@cd projects/gcc && patch -p1 < ../../gcc-pcrel-freestanding.patch || echo "Failed to apply gcc-pcrel-freestanding.patch; check compatibility."
 
 # =================================================
 # vasm
@@ -456,9 +462,9 @@ $(BUILD)/gcc/_libgcc_done: $(shell find 2>/dev/null projects/gcc/libgcc -type f)
 # newlib
 # =================================================
 NEWLIB_FILES = $(shell find 2>/dev/null projects/newlib-cygwin/newlib -type f)
-NEWLIB_CONFIG := --target=m68k-elf --prefix=$(PREFIX_PATH) --enable-newlib-io-c99-formats --enable-newlib-reent-small \
-                 --enable-newlib-mb --disable-shared --enable-static --enable-newlib-multithread --disable-newlib-mb \
-				 --disable-newlib-atexit-alloc --enable-target-optspace --enable-fast-install
+NEWLIB_CONFIG := --target=m68k-elf --with-cpu=68000 --prefix=$(PREFIX_PATH) --enable-newlib-io-c99-formats --enable-newlib-reent-small \
+                 --enable-lite-exit --disable-newlib-supplied-syscalls --disable-shared --enable-static --disable-newlib-multithread --disable-newlib-mb \
+				 				 --disable-newlib-atexit-alloc --enable-target-optspace --enable-fast-install --disable-multilib
 
 .PHONY: newlib
 newlib: $(BUILD)/newlib/_done
