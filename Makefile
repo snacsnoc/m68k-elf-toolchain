@@ -25,9 +25,7 @@ BUILD_THREADS := -j8
 GIT_BINUTILS         := git://sourceware.org/git/binutils-gdb.git
 GIT_GCC              := https://github.com/gcc-mirror/gcc
 GIT_NEWLIB_CYGWIN    := https://github.com/ddraig68k/newlib-cygwin.git
-GIT_VASM             := https://github.com/ddraig68k/vasm
-GIT_VBCC             := https://github.com/ddraig68k/vbcc
-GIT_VLINK            := https://github.com/ddraig68k/vlink
+
 
 CFLAGS ?= -Os
 CXXFLAGS ?= $(CFLAGS)
@@ -156,7 +154,7 @@ help:
 	@echo "make help            display this help"
 	@echo "make info            print prefix and other flags"
 	@echo "make all             build and install all"
-	@echo "make <target>        builds a target: binutils, gcc, vasm, vbcc, vlink, libgcc, newlib"
+	@echo "make <target>        builds a target: binutils, gcc, libgcc, newlib"
 	@echo "make clean           remove the build folder"
 	@echo "make clean-<target>	remove the target's build folder"
 	@echo "make clean-prefix    remove all content from the prefix folder"
@@ -183,8 +181,8 @@ ifeq ($(BUILD_TARGET),msys)
 clean: clean-gmp clean-mpc clean-mpfr
 endif
 
-.PHONY: clean-prefix clean clean-gcc clean-binutils clean-vasm clean-vbcc clean-vlink clean-libgcc clean-newlib
-clean: clean-gcc clean-binutils clean-vasm clean-vbcc clean-vlink clean-newlib
+.PHONY: clean-prefix clean clean-gcc clean-binutils clean-libgcc clean-newlib
+clean: clean-gcc clean-binutils clean-newlib
 	rm -rf $(BUILD)
 
 clean-gcc:
@@ -205,15 +203,6 @@ clean-libgcc:
 
 clean-binutils:
 	rm -rf $(BUILD)/binutils
-
-clean-vasm:
-	rm -rf $(BUILD)/vasm
-
-clean-vbcc:
-	rm -rf $(BUILD)/vbcc
-
-clean-vlink:
-	rm -rf $(BUILD)/vlink
 
 clean-newlib:
 	rm -rf $(BUILD)/newlib
@@ -243,14 +232,6 @@ update-gcc: projects/gcc/configure
 update-binutils: projects/binutils/configure
 	cd projects/binutils && export DEPTH=16; while true; do echo "trying depth=$$DEPTH"; git pull --depth $$DEPTH && break; export DEPTH=$$(($$DEPTH+$$DEPTH));done
 
-update-vasm: projects/vasm/Makefile
-	@cd projects/vasm && git pull
-
-update-vbcc: projects/vbcc/Makefile
-	@cd projects/vbcc && git pull
-
-update-vlink: projects/vlink/Makefile
-	@cd projects/vlink && git pull
 
 update-newlib: projects/newlib-cygwin/newlib/configure
 	@cd projects/newlib-cygwin && git pull
@@ -369,76 +350,6 @@ projects/gcc/configure:
 	@cd projects &&	git clone -b $(GCC_BRANCH) --depth 16 $(GIT_GCC)
 	@cd projects/gcc && patch -p1 < ../../gcc-pcrel-freestanding.patch || echo "Failed to apply gcc-pcrel-freestanding.patch; check compatibility."
 
-# =================================================
-# vasm
-# =================================================
-VASM_CMD := vasmm68k_mot
-VASM := $(patsubst %,$(PREFIX_PATH)/bin/%$(EXEEXT), $(VASM_CMD))
-
-vasm: $(BUILD)/vasm/_done
-
-$(BUILD)/vasm/_done: $(BUILD)/vasm/Makefile 
-	$(L0)"make vasm"$(L1) $(MAKE) -C $(BUILD)/vasm CPU=m68k SYNTAX=mot $(L2) 
-	@mkdir -p $(PREFIX_PATH)/bin/
-	$(L0)"install vasm"$(L1) install $(BUILD)/vasm/vasmm68k_mot $(PREFIX_PATH)/bin/ ;\
-	install $(BUILD)/vasm/vobjdump $(PREFIX_PATH)/bin/ $(L2)
-	@echo "done" >$@
-
-$(BUILD)/vasm/Makefile: projects/vasm/Makefile $(shell find 2>/dev/null projects/vasm -not \( -path projects/vasm/.git -prune \) -type f)
-	@rsync -a projects/vasm $(BUILD)/ --exclude .git
-	@touch $(BUILD)/vasm/Makefile
-
-projects/vasm/Makefile:
-	@mkdir -p projects
-	@cd projects &&	git clone -b master --depth 4 $(GIT_VASM)
-
-# =================================================
-# vbcc
-# =================================================
-VBCC_CMD := vbccm68k vprof vc
-VBCC := $(patsubst %,$(PREFIX_PATH)/bin/%$(EXEEXT), $(VBCC_CMD))
-
-vbcc: $(BUILD)/vbcc/_done
-
-$(BUILD)/vbcc/_done: $(BUILD)/vbcc/Makefile
-	$(L0)"make vbcc dtgen"$(L1) TARGET=m68k $(MAKE) -C $(BUILD)/vbcc bin/dtgen $(L2)
-	@cd $(BUILD)/vbcc && echo -e "y\\ny\\nsigned char\\ny\\nunsigned char\\nn\\ny\\nsigned short\\nn\\ny\\nunsigned short\\nn\\ny\\nsigned int\\nn\\ny\\nunsigned int\\nn\\ny\\nsigned long long\\nn\\ny\\nunsigned long long\\nn\\ny\\nfloat\\nn\\ny\\ndouble\\n" >c.txt
-	$(L0)"run vbcc dtgen"$(L1) cd $(BUILD)/vbcc && bin/dtgen machines/m68k/machine.dt machines/m68k/dt.h machines/m68k/dt.c <c.txt $(L2)
-	$(L0)"make vbcc"$(L1) TARGET=m68k $(MAKE) -C $(BUILD)/vbcc $(L2) 
-	@mkdir -p $(PREFIX_PATH)/bin/
-	@rm -rf $(BUILD)/vbcc/bin/*.dSYM
-	$(L0)"install vbcc"$(L1) install $(BUILD)/vbcc/bin/v* $(PREFIX_PATH)/bin/ $(L2)
-	@echo "done" >$@
-
-$(BUILD)/vbcc/Makefile: projects/vbcc/Makefile $(shell find 2>/dev/null projects/vbcc -not \( -path projects/vbcc/.git -prune \) -type f)
-	@rsync -a projects/vbcc $(BUILD)/ --exclude .git
-	@mkdir -p $(BUILD)/vbcc/bin
-	@touch $(BUILD)/vbcc/Makefile
-
-projects/vbcc/Makefile:
-	@mkdir -p projects
-	@cd projects &&	git clone -b master --depth 4 $(GIT_VBCC)
-
-# =================================================
-# vlink
-# =================================================
-VLINK_CMD := vlink
-VLINK := $(patsubst %,$(PREFIX_PATH)/bin/%$(EXEEXT), $(VLINK_CMD))
-
-vlink: $(BUILD)/vlink/_done
-
-$(BUILD)/vlink/_done: $(BUILD)/vlink/Makefile $(shell find 2>/dev/null projects/vlink -not \( -path projects/vlink/.git -prune \) -type f)
-	$(L0)"make vlink"$(L1) cd $(BUILD)/vlink && TARGET=m68k $(MAKE) $(L2) 
-	@mkdir -p $(PREFIX_PATH)/bin/
-	$(L0)"install vlink"$(L1) install $(BUILD)/vlink/vlink $(PREFIX_PATH)/bin/ $(L2)
-	@echo "done" >$@
-
-$(BUILD)/vlink/Makefile: projects/vlink/Makefile
-	@rsync -a projects/vlink $(BUILD)/ --exclude .git
-
-projects/vlink/Makefile:
-	@mkdir -p projects
-	@cd projects &&	git clone -b master --depth 4 $(GIT_VLINK)
 
 # =================================================
 # L I B R A R I E S
