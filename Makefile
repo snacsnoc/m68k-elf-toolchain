@@ -29,6 +29,7 @@ GIT_NEWLIB_CYGWIN    := https://github.com/ddraig68k/newlib-cygwin.git
 
 CFLAGS ?= -Os
 CXXFLAGS ?= $(CFLAGS)
+# -Os for CFLAGS_FOR_TARGET generates an internal compiler error for libgcc2.c
 CFLAGS_FOR_TARGET ?= -O2 -mpcrel -fomit-frame-pointer -ffixed-a5 -fshort-enums -fno-cse-follow-jumps
 CXXFLAGS_FOR_TARGET ?= $(CFLAGS_FOR_TARGET) -fno-exceptions -fno-rtti
 ASFLAGS_FOR_TARGET = --pcrel
